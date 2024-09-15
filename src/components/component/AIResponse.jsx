@@ -30,14 +30,55 @@ export default function AIResponse(promptPrefix) {
     }
   }, []);
 
-  // Register the ORA plugin with the specified chain
-  //web3.registerPlugin(new ORAPlugin(Chain.SEPOLIA));
+  // Function to switch to the Sepolia network
+  const switchToSepoliaNetwork = async () => {
+    const sepoliaChainId = '0xaa36a7'; // Chain ID for Sepolia testnet
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: sepoliaChainId }],
+      });
+    } catch (switchError) {
+      // This error code indicates that the chain has not been added to MetaMask
+      if (switchError.code === 4902) {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [
+              {
+                chainId: sepoliaChainId,
+                chainName: 'Sepolia Testnet',
+                rpcUrls: ['https://rpc.sepolia.org'],
+                nativeCurrency: {
+                  name: 'Sepolia Ether',
+                  symbol: 'SEP',
+                  decimals: 18,
+                },
+                blockExplorerUrls: ['https://sepolia.etherscan.io'],
+              },
+            ],
+          });
+        } catch (addError) {
+          console.error("Failed to add Sepolia network:", addError);
+        }
+      } else {
+        console.error("Failed to switch to Sepolia network:", switchError);
+      }
+    }
+  };
 
   // Function to handle sending the message to the ORA AI
   const handleSend = async () => {
     setLoading(true);
     setResponse("Estimating fee and sending transaction...");
     try {
+      // Check if the user is on the Sepolia network
+      const currentChainId = await web3.eth.getChainId();
+      const sepoliaChainId = 11155111; // Chain ID for Sepolia testnet
+      if (currentChainId !== sepoliaChainId) {
+        await switchToSepoliaNetwork();
+      }
+
       // Estimate the fee for the AI model
       const estimateFee = await web3.ora.estimateFee(MODEL);
       console.log("fee", estimateFee);
