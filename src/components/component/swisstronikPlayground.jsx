@@ -135,6 +135,7 @@ export default function SwisstronikPlayground() {
   };
 
   const handleSendSWTR = async () => {
+    setIsTransferring(true); // Set transferring state to true
     try {
       // Check if the user is on the Swisstronik network
       const currentChainId = await web3.eth.getChainId();
@@ -142,59 +143,73 @@ export default function SwisstronikPlayground() {
       if (currentChainId !== swisstronikChainId) {
         await switchToSwisstronikNetwork();
       }
-
+  
       // Validate recipient address
       if (!web3.utils.isAddress(recipientAddress)) {
         setError("Invalid recipient address.");
+        setIsTransferring(false); // Set transferring state to false
         return;
       }
-
+  
       // Check sender's balance
       if (accounts.length === 0 || !accounts[0]) {
         setError("No accounts found. Please connect to MetaMask.");
+        setIsTransferring(false); // Set transferring state to false
         return;
       }
-
+  
       const balance = await web3.eth.getBalance(accounts[0]);
       console.log("Balance:", balance);
-
+  
       // Parse the amount entered by the user and divide by 1000
       const parsedAmount = parseFloat(amount) / 1000;
       const amountInWei = unit === "ETH" ? web3.utils.toWei(parsedAmount.toString(), "ether") : parsedAmount.toString();
-
+  
       if (BigInt(balance) < BigInt(amountInWei)) {
         setError("Insufficient funds.");
+        setIsTransferring(false); // Set transferring state to false
         return;
       }
-
+  
       // Estimate gas
       const tx = {
         to: recipientAddress,
         from: accounts[0],
         value: amountInWei,
       };
-
+  
       const gasEstimate = await web3.eth.estimateGas(tx);
       console.log("Estimated Gas:", gasEstimate);
-
+  
       // Use MetaMask to send the transaction with gas estimate
-      await window.ethereum.request({
+      const transactionParameters = {
+        ...tx,
+        gas: web3.utils.toHex(gasEstimate),
+      };
+  
+      const txHash = await window.ethereum.request({
         method: 'eth_sendTransaction',
-        params: [{
-          ...tx,
-          gas: web3.utils.toHex(gasEstimate),
-        }],
+        params: [transactionParameters],
       });
-      
-      setTransferStatus("Transaction successful 🎉");
-      // await updateBalance();
-      setError(null);
-      await updateBalance(accounts[0]); // Update balance after transaction
+  
+      console.log("Transaction Hash:", txHash);
+  
+      if (txHash) {
+        setTimeout(async () => {
+          await updateBalance(accounts[0]); // Update balance after 3 seconds
+          setTransferStatus("Transaction successful 🎉");
+          setError(null);
+        }, 4000); 
+      } else {
+        setError("Transaction failed. Please try again later.");
+        setTransferStatus(null);
+      }
     } catch (error) {
       console.error("Error sending SWTR:", error);
       setError("Failed to send SWTR. Please try again later.");
       setTransferStatus(null);
     }
+    setIsTransferring(false); // Set transferring state to false
   };
 
   useEffect(() => {
