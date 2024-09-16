@@ -24,8 +24,11 @@ export default function SwisstronikPlayground() {
   const [isTransferring, setIsTransferring] = useState(false);
   const [recipientAddress, setRecipientAddress] = useState("");
   const [amount, setAmount] = useState("");
+  const [unit, setUnit] = useState("ETH"); // New state variable for unit
   const [accounts, setAccounts] = useState([]);
   const [connectedAccount, setConnectedAccount] = useState("");
+  const [balance, setBalance] = useState("0");
+  const [isConnecting, setIsConnecting] = useState(false); // New state variable for connecting
 
   const fetchContractData = async () => {
     setIsFetching(true);
@@ -44,31 +47,6 @@ export default function SwisstronikPlayground() {
       setContractData({});
     }
     setIsFetching(false);
-  };
-
-  const connect = async () => {
-    console.log("Connect button clicked");
-    if (window.ethereum) {
-      const web3 = new Web3(window.ethereum);
-      try {
-        const accounts = await web3.eth.requestAccounts();
-        console.log("Accounts retrieved:", accounts);
-        if (accounts.length > 0) {
-          console.log('You are already connected to wallet');
-          setAccounts(accounts);
-          setConnectedAccount(accounts[0]);
-        } else {
-          console.log('You are not connected to wallet');
-          alert('Please connect to MetaMask');
-        }
-      } catch (error) {
-        alert('Something went wrong with wallet or internet connection');
-        console.log("Error:", error);
-      }
-    } else {
-      alert("MetaMask is not installed. Please install it to use this feature.");
-      console.log("No Ethereum provider detected");
-    }
   };
 
   const switchToSwisstronikNetwork = async () => {
@@ -107,12 +85,57 @@ export default function SwisstronikPlayground() {
     }
   };
 
+  const connect = async () => {
+    console.log("Connect button clicked");
+    setIsConnecting(true); // Set connecting state to true
+    if (window.ethereum) {
+      const web3 = new Web3(window.ethereum);
+      try {
+        const accounts = await web3.eth.requestAccounts();
+        console.log("Accounts retrieved:", accounts);
+        if (accounts.length > 0) {
+          console.log('You are already connected to wallet');
+          setAccounts(accounts);
+          setConnectedAccount(accounts[0]);
+
+          // Check if the user is on the Swisstronik network
+          const currentChainId = await web3.eth.getChainId();
+          const swisstronikChainId = 1291; 
+          if (currentChainId !== swisstronikChainId) {
+            await switchToSwisstronikNetwork();
+          }
+
+          await updateBalance(accounts[0]);
+          setIsConnecting(false); // Set connecting state to false
+        } else {
+          console.log('You are not connected to wallet');
+          alert('Please connect to MetaMask');
+          setIsConnecting(false); // Set connecting state to false
+        }
+      } catch (error) {
+        alert('Something went wrong with wallet or internet connection');
+        console.log("Error:", error);
+        setIsConnecting(false); // Set connecting state to false
+      }
+    } else {
+      alert("MetaMask is not installed. Please install it to use this feature.");
+      console.log("No Ethereum provider detected");
+      setIsConnecting(false); // Set connecting state to false
+    }
+  };
+
+  const updateBalance = async (account) => {
+    try {
+      const balance = await web3.eth.getBalance(account);
+      setBalance(parseFloat(web3.utils.fromWei(balance, "ether")).toFixed(3));
+    } catch (error) {
+      console.error("Error fetching balance:", error);
+      setError("Failed to fetch balance. Please try again later.");
+    }
+  };
+
   const handleSendSWTR = async () => {
     try {
-      if (accounts.length === 0) {
-        await connect();
-      }
-
       // Check if the user is on the Swisstronik network
       const currentChainId = await web3.eth.getChainId();
       const swisstronikChainId = 1291; 
@@ -128,15 +151,17 @@ export default function SwisstronikPlayground() {
 
       // Check sender's balance
       if (accounts.length === 0 || !accounts[0]) {
-        setError("No SWTR accounts found. Switching to swisstronik.....try again.");
+        setError("No accounts found. Please connect to MetaMask.");
         return;
       }
 
       const balance = await web3.eth.getBalance(accounts[0]);
       console.log("Balance:", balance);
 
+      // Parse the amount entered by the user and divide by 1000
       const parsedAmount = parseFloat(amount) / 1000;
-      const amountInWei = web3.utils.toWei(parsedAmount, "ether");
+      const amountInWei = unit === "ETH" ? web3.utils.toWei(parsedAmount.toString(), "ether") : parsedAmount.toString();
+
       if (BigInt(balance) < BigInt(amountInWei)) {
         setError("Insufficient funds.");
         return;
@@ -160,9 +185,11 @@ export default function SwisstronikPlayground() {
           gas: web3.utils.toHex(gasEstimate),
         }],
       });
-
+      
       setTransferStatus("Transaction successful 🎉");
+      // await updateBalance();
       setError(null);
+      await updateBalance(accounts[0]); // Update balance after transaction
     } catch (error) {
       console.error("Error sending SWTR:", error);
       setError("Failed to send SWTR. Please try again later.");
@@ -179,7 +206,7 @@ export default function SwisstronikPlayground() {
       <Card>
         <CardHeader>
           <CardTitle>Playground (Swisstronik Plugin)</CardTitle>
-          <CardDescription>Interact with Swisstronik smart contracts</CardDescription>
+          <CardDescription>Interact with any Swisstronik smart contracts or send some SWTR</CardDescription>
         </CardHeader>
         <CardContent>
           {error && (
@@ -224,6 +251,18 @@ export default function SwisstronikPlayground() {
               </TableBody>
             </Table>
           )}
+          <hr className="my-4" />
+          <h2 className="text-xl font-bold mb-2">Send Some SWTR</h2>
+          <div className="flex items-center justify-between mb-4">
+            {connectedAccount && (
+              <div className="p-2 bg-gray-100 rounded">
+                <strong>Balance:</strong> <span className="text-green-600 font-bold">{balance} SWTR</span>
+              </div>
+            )}
+            <Button onClick={connect} className="ml-auto">
+              {isConnecting ? "Connecting..." : connectedAccount ? "Connected" : "Connect to Swisstronik"}
+            </Button>
+          </div>
           <div className="flex items-center mb-4">
             <Input
               type="text"
@@ -239,10 +278,9 @@ export default function SwisstronikPlayground() {
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
             />
-            <Button onClick={handleSendSWTR} className={`ml-2 ${isTransferring ? "opacity-50 cursor-not-allowed" : ""}`} disabled={isTransferring}>
-              {isTransferring ? "Sending..." : "Send SWTR"}
+            <Button onClick={handleSendSWTR} className={`ml-2 ${isTransferring || !connectedAccount ? "opacity-50 cursor-not-allowed" : ""}`} disabled={isTransferring || !connectedAccount}>
+              {isTransferring ? "Sending..." : !connectedAccount ? "Connect Account" : "Send SWTR"}
             </Button>
-            
           </div>
         </CardContent>
       </Card>
